@@ -105,8 +105,15 @@ jobs:
 
             # 2. Are any installed packages behind the repository index?
             #    This is the case the old digest comparison could not see.
-            OUTDATED=$(docker run --rm --entrypoint sh "$PUBLISHED" -c \
-              "apk update >/dev/null 2>&1; apk version -l '<' 2>/dev/null | tail -n +2" || true)
+            #    As root: an image that runs as another user cannot refresh
+            #    the index, and the check would then find nothing, silently.
+            #    apk for Alpine images, apt for Debian ones.
+            OUTDATED=$(docker run --rm --user 0 --entrypoint sh "$PUBLISHED" -c '
+              if command -v apk >/dev/null 2>&1; then
+                apk update >/dev/null 2>&1; apk version -l "<" 2>/dev/null | tail -n +2
+              elif command -v apt-get >/dev/null 2>&1; then
+                apt-get update -qq >/dev/null 2>&1; apt list --upgradable 2>/dev/null | tail -n +2
+              fi' || true)
             if [ -n "$OUTDATED" ]; then
               COUNT=$(printf '%s\n' "$OUTDATED" | grep -c . || true)
               echo "Outdated packages:"; printf '%s\n' "$OUTDATED"
